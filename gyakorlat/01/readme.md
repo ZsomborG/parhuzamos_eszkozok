@@ -59,3 +59,47 @@ Minden elemre meghatározza, hány nála szigorúan kisebb elem található a t�
     gcc rank.c kernel_loader.c -o rank -lOpenCL
     ```
 *   **Futtatás:** `.\rank.exe`
+
+### 7. Elemek előfordulásának száma és egyediség (`count_occurrences`)
+Párhuzamosan megszámolja egy tömb minden elemének előfordulását (hányszor szerepel a tömbben). A Host kód ezután kiértékeli a GPU eredményét, és eldönti, hogy a tömb minden eleme egyedi-e (nincs-e duplikátum).
+
+*   **Forráskód:** `count_occurrences.c`
+*   **Kernel:** `kernels/count_occurrences.cl`
+*   **Fordítás:**
+    ```bash
+    gcc count_occurrences.c kernel_loader.c -o count_occurrences -lOpenCL
+    ```
+*   **Futtatás:** `.\count_occurrences.exe`
+
+### 8. Szélsőérték vizsgálat konstans időben (`extrema`)
+PRAM CRCW modell alapján $O(1)$ időben határozza meg egy tömb maximális elemét. A felhasznált magok számát optimalizálja azzal, hogy a kétdimenziós indexmátrixnak csak a felső háromszögét vizsgálja meg (kizárva a felesleges ismételt vizsgálatokat).
+
+*   **Forráskód:** `extrema.c`
+*   **Kernel:** `kernels/extrema.cl`
+*   **Fordítás:**
+    ```bash
+    gcc extrema.c kernel_loader.c -o extrema -lOpenCL
+    ```
+*   **Futtatás:** `.\extrema.exe`
+
+### 9. Csúszóátlag számítása (`moving_average`)
+Jelfeldolgozási feladat, amely egy megadott sugarú (radius) környezeten belüli elemek átlagát számítja ki minden ponthoz, ezáltal zajszűrést (smoothing) végezve az adatsoron. Helyesen kezeli a tömb szélein fellépő csonkított ablakméreteket.
+
+*   **Forráskód:** `moving_average.c`
+*   **Kernel:** `kernels/moving_average.cl`
+*   **Fordítás:**
+    ```bash
+    gcc moving_average.c kernel_loader.c -o moving_average -lOpenCL
+    ```
+*   **Futtatás:** `.\moving_average.exe`
+
+### 10. Prím vizsgálat (`prime_check`)
+Prímszámtesztelés három különböző párhuzamosítási stratégiával (egy osztó/szál, osztótartomány/szál, előre generált prímek/szál). A CPU Eratoszthenész szitájával generálja le a prímeket $\sqrt{N}$-ig, majd ezeket betölti a memóriába a kernel 3. módjának futtatásához.
+
+*   **Forráskód:** `prime_check.c`
+*   **Kernel:** `kernels/prime_check.cl`
+*   **Fordítás:**
+    ```bash
+    gcc prime_check.c kernel_loader.c -o prime_check -lOpenCL
+    ```
+*   **Futtatás:** `.\prime_check.exe`
