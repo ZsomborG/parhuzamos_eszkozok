@@ -6,8 +6,8 @@
 
 int main(void)
 {
-    const int width = 4;
-    const int height = 4;
+    const int width = 512;
+    const int height = 512;
     size_t buffer_size = width * height * sizeof(float);
 
     cl_int err;
@@ -28,29 +28,30 @@ int main(void)
     cl_kernel kernel = clCreateKernel(program, "perlin_noise", NULL);
 
     // 3. Buffers
-    float *host_output = (float *)malloc(buffer_size);
     cl_mem device_output = clCreateBuffer(context, CL_MEM_WRITE_ONLY, buffer_size, NULL, NULL);
-
-    // 4. Set Args and Run
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &device_output);
     clSetKernelArg(kernel, 1, sizeof(int), &width);
+    clSetKernelArg(kernel, 2, sizeof(int), &height);
 
+    // 4. Run
     size_t global_size[2] = {width, height};
     clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_size, NULL, 0, NULL, NULL);
 
     // 5. Read Back
+    float *host_output = (float *)malloc(buffer_size);
     clEnqueueReadBuffer(queue, device_output, CL_TRUE, 0, buffer_size, host_output, 0, NULL, NULL);
 
-    // 6. Console Visualization
-    printf("4x4 OpenCL Grid Verification:\n");
-    for (int y = 0; y < height; y++)
+    // 6. Save to .ppm
+    FILE *fp = fopen("perlin_noise.ppm", "wb");
+    fprintf(fp, "P6\n%d %d\n255\n", width, height);
+    for (int i = 0; i < width * height; i++)
     {
-        for (int x = 0; x < width; x++)
-        {
-            printf("%5.1f ", host_output[y * width + x]);
-        }
-        printf("\n");
+        unsigned char val = (unsigned char)(host_output[i] * 255.0f);
+        fputc(val, fp); // R
+        fputc(val, fp); // G
+        fputc(val, fp); // B
     }
+    fclose(fp);
 
     // Cleanup
     clReleaseMemObject(device_output);
