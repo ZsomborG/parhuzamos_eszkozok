@@ -8,6 +8,8 @@ int main(void)
 {
     const int width = 512;
     const int height = 512;
+    float scale = 0.02f;
+    int seed = 42;
     size_t buffer_size = width * height * sizeof(float);
 
     cl_int err;
@@ -32,6 +34,8 @@ int main(void)
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &device_output);
     clSetKernelArg(kernel, 1, sizeof(int), &width);
     clSetKernelArg(kernel, 2, sizeof(int), &height);
+    clSetKernelArg(kernel, 3, sizeof(float), &scale);
+    clSetKernelArg(kernel, 4, sizeof(int), &seed);
 
     // 4. Run
     size_t global_size[2] = {width, height};
