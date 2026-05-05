@@ -1,106 +1,165 @@
-#include "kernel_loader.h"
 #define CL_TARGET_OPENCL_VERSION 220
+#ifndef GL_RGBA32F
+#define GL_RGBA32F 0x8814
+#endif
+
+#include <windows.h>
+#include <GL/gl.h>
 #include <CL/cl.h>
+#include <CL/cl_gl.h>
+#include "kernel_loader.h"
 #include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
 
-int main(void)
+const int width = 1024;
+const int height = 1024;
+
+cl_context context;
+cl_command_queue queue;
+cl_kernel kernel;
+cl_mem cl_image;
+
+float cam_x = 0.0f;
+float cam_y = 0.0f;
+float cam_speed = 0.0005f;
+
+void init_opencl(HWND hwnd)
 {
-    int test_res[][2] = {
-        {960, 544},
-        {1280, 720},
-        {1600, 900},
-        {1920, 1080},
-        {2560, 1440},
-        {3200, 1800},
-        {3840, 2160}};
-
-    int num_resolutions = sizeof(test_res) / sizeof(test_res[0]);
-    int runs_per_res = 3;
-
-    float scale = 0.005f;
-    int seed = (int)time(NULL);
     cl_int err;
-    int error_code;
-
-    // 1. Setup
     cl_platform_id platform;
     clGetPlatformIDs(1, &platform, NULL);
+
     cl_device_id device;
     clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-    cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, NULL);
-    cl_queue_properties props[] = {CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE, 0};
-    cl_command_queue queue = clCreateCommandQueueWithProperties(context, device, props, &err);
 
-    // 2. Load and Build
+    cl_context_properties props[] = {
+        CL_GL_CONTEXT_KHR, (cl_context_properties)wglGetCurrentContext(),
+        CL_WGL_HDC_KHR, (cl_context_properties)wglGetCurrentDC(),
+        CL_CONTEXT_PLATFORM, (cl_context_properties)platform,
+        0};
+    context = clCreateContext(props, 1, &device, NULL, NULL, &err);
+
+    cl_queue_properties q_props[] = {CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE, 0};
+    queue = clCreateCommandQueueWithProperties(context, device, q_props, &err);
+
+    int error_code;
     const char *source = load_kernel_source("kernels/perlin.cl", &error_code);
     cl_program program = clCreateProgramWithSource(context, 1, &source, NULL, NULL);
     clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-    cl_kernel kernel = clCreateKernel(program, "perlin_noise", NULL);
+    kernel = clCreateKernel(program, "perlin_noise", NULL);
 
-    for (int r = 0; r < num_resolutions; r++)
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    cl_image = clCreateFromGLTexture(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, tex, &err);
+}
+
+void render(HWND hwnd)
+{
+    if (GetAsyncKeyState('W') & 0x8000)
+        cam_y += cam_speed;
+    if (GetAsyncKeyState('S') & 0x8000)
+        cam_y -= cam_speed;
+    if (GetAsyncKeyState('A') & 0x8000)
+        cam_x -= cam_speed;
+    if (GetAsyncKeyState('D') & 0x8000)
+        cam_x += cam_speed;
+
+    float scale = 0.004f;
+    int seed = 123;
+
+    glFinish();
+    clEnqueueAcquireGLObjects(queue, 1, &cl_image, 0, NULL, NULL);
+
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &cl_image);
+    clSetKernelArg(kernel, 1, sizeof(float), &scale);
+    clSetKernelArg(kernel, 2, sizeof(float), &cam_x);
+    clSetKernelArg(kernel, 3, sizeof(float), &cam_y);
+    clSetKernelArg(kernel, 4, sizeof(int), &seed);
+
+    size_t global[2] = {width, height};
+    cl_event event;
+
+    clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global, NULL, 0, NULL, &event);
+    clEnqueueReleaseGLObjects(queue, 1, &cl_image, 0, NULL, NULL);
+
+    clWaitForEvents(1, &event);
+
+    static DWORD last_time = 0;
+    static int frames = 0;
+    DWORD current_time = GetTickCount();
+    frames++;
+
+    if (current_time - last_time >= 500)
     {
-        int width = test_res[r][0];
-        int height = test_res[r][1];
-        size_t buffer_size = width * height * sizeof(float);
+        cl_ulong start_time, end_time;
+        clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(start_time), &start_time, NULL);
+        clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(end_time), &end_time, NULL);
+        double gpu_time_ms = (double)(end_time - start_time) / 1000000.0;
+        float fps = frames * 1000.0f / (current_time - last_time);
 
-        printf("--- Resolution: %dx%d ---\n", width, height);
+        char title[256];
+        sprintf(title, "OpenCL Terepgenerator | FPS: %.0f | GPU Ido: %.2f ms", fps, gpu_time_ms);
+        SetWindowTextA(hwnd, title);
 
-        for (int i = 0; i < runs_per_res; i++)
+        frames = 0;
+        last_time = current_time;
+    }
+    clReleaseEvent(event);
+    clFinish(queue);
+
+    glClear(GL_COLOR_BUFFER_BIT);
+    glEnable(GL_TEXTURE_2D);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0);
+    glVertex2f(-1, -1);
+    glTexCoord2f(1, 0);
+    glVertex2f(1, -1);
+    glTexCoord2f(1, 1);
+    glVertex2f(1, 1);
+    glTexCoord2f(0, 1);
+    glVertex2f(-1, 1);
+    glEnd();
+}
+
+LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l)
+{
+    if (m == WM_DESTROY)
+        PostQuitMessage(0);
+    return DefWindowProc(h, m, w, l);
+}
+
+int main()
+{
+    WNDCLASS wc = {0};
+    wc.lpfnWndProc = WndProc;
+    wc.lpszClassName = "CLGL";
+    RegisterClass(&wc);
+
+    HWND hwnd = CreateWindow("CLGL", "OpenCL Terepgenerator", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, width, height, 0, 0, 0, 0);
+
+    HDC hdc = GetDC(hwnd);
+    PIXELFORMATDESCRIPTOR pfd = {sizeof(pfd), 1, PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER, PFD_TYPE_RGBA, 32};
+    SetPixelFormat(hdc, ChoosePixelFormat(hdc, &pfd), &pfd);
+    wglMakeCurrent(hdc, wglCreateContext(hdc));
+
+    init_opencl(hwnd);
+
+    MSG msg;
+    while (1)
+    {
+        if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
         {
-            cl_mem device_output = clCreateBuffer(context, CL_MEM_WRITE_ONLY, buffer_size, NULL, NULL);
-            float *host_output = (float *)malloc(buffer_size);
-
-            clSetKernelArg(kernel, 0, sizeof(cl_mem), &device_output);
-            clSetKernelArg(kernel, 1, sizeof(int), &width);
-            clSetKernelArg(kernel, 2, sizeof(int), &height);
-            clSetKernelArg(kernel, 3, sizeof(float), &scale);
-            clSetKernelArg(kernel, 4, sizeof(int), &seed);
-
-            size_t global_size[2] = {(size_t)width, (size_t)height};
-            // size_t local_size[2] = {width, height};
-
-            cl_event kernel_event, read_event;
-            clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_size, NULL, 0, NULL, &kernel_event);
-            clEnqueueReadBuffer(queue, device_output, CL_TRUE, 0, buffer_size, host_output, 0, NULL, &read_event);
-
-            cl_ulong start, end, r_start, r_end;
-            clGetEventProfilingInfo(kernel_event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
-            clGetEventProfilingInfo(kernel_event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end, NULL);
-            clGetEventProfilingInfo(read_event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &r_start, NULL);
-            clGetEventProfilingInfo(read_event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &r_end, NULL);
-
-            printf("Kernel: %.4f ms | Readback: %.4f ms\n", (end - start) * 1e-6, (r_end - r_start) * 1e-6);
-
-            if (i == runs_per_res - 1)
-            {
-                char filename[64];
-                sprintf(filename, "perlin_%dx%d.ppm", width, height);
-                FILE *fp = fopen(filename, "wb");
-                fprintf(fp, "P6\n%d %d\n255\n", width, height);
-                for (int j = 0; j < width * height; j++)
-                {
-                    unsigned char val = (unsigned char)(host_output[j] * 255.0f);
-                    fputc(val, fp);
-                    fputc(val, fp);
-                    fputc(val, fp);
-                }
-                fclose(fp);
-                printf("Saved output to %s\n", filename);
-            }
-            printf("\n");
-
-            clReleaseEvent(kernel_event);
-            clReleaseEvent(read_event);
-            clReleaseMemObject(device_output);
-            free(host_output);
+            if (msg.message == WM_QUIT)
+                break;
+            DispatchMessage(&msg);
         }
+        render(hwnd);
+        SwapBuffers(hdc);
     }
 
-    clReleaseKernel(kernel);
-    clReleaseProgram(program);
-    clReleaseCommandQueue(queue);
-    clReleaseContext(context);
     return 0;
 }

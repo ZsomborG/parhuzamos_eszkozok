@@ -34,7 +34,7 @@ int main(void)
     cl_command_queue queue = clCreateCommandQueueWithProperties(context, device, props, &err);
 
     // 2. Load and Build
-    const char *source = load_kernel_source("kernels/perlin.cl", &error_code);
+    const char *source = load_kernel_source("kernels/perlin_buffer.cl", &error_code);
     cl_program program = clCreateProgramWithSource(context, 1, &source, NULL, NULL);
     clBuildProgram(program, 1, &device, NULL, NULL, NULL);
     cl_kernel kernel = clCreateKernel(program, "perlin_noise", NULL);

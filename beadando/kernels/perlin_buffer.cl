@@ -43,44 +43,28 @@ float get_noise(float x, float y, int seed) {
   return lerp(nx0, nx1, v);
 }
 
-__kernel void perlin_noise(write_only image2d_t output, const float scale,
-                           const float offset_x, const float offset_y,
-                           const int seed) {
+__kernel void perlin_noise(__global float *output, int width, int height,
+                           float scale, int seed) {
   int i = get_global_id(0);
   int j = get_global_id(1);
-
-  int width = get_image_width(output);
-  int height = get_image_height(output);
   if (i >= width || j >= height)
     return;
 
-  float x = (float)i * scale + offset_x + 0.1f;
-  float y = (float)j * scale + offset_y + 0.1f;
+  float x = (float)i * scale;
+  float y = (float)j * scale;
 
-  float total = 0.0f, amp = 1.0f, freq = 1.0f, max_v = 0.0f;
+  float total = 0.0f;
+  float amplitude = 1.0f;
+  float frequency = 1.0f;
+  float max_value = 0.0f;
+
   for (int o = 0; o < 6; o++) {
-    total += get_noise(x * freq, y * freq, seed) * amp;
-    max_v += amp;
-    amp *= 0.5f;
-    freq *= 2.0f;
+    total += get_noise(x * frequency, y * frequency, seed) * amplitude;
+    max_value += amplitude;
+    amplitude *= 0.5f;
+    frequency *= 2.0f;
   }
 
-  float val = clamp((total / max_v) + 0.5f, 0.0f, 1.0f);
-
-  float4 color;
-  if (val < 0.40f) {
-    color = (float4)(0.1f, 0.3f, 0.7f, 1.0f); // Mélyvíz
-  } else if (val < 0.48f) {
-    color = (float4)(0.2f, 0.6f, 0.8f, 1.0f); // Sekély víz
-  } else if (val < 0.52f) {
-    color = (float4)(0.8f, 0.8f, 0.5f, 1.0f); // Homok (Part)
-  } else if (val < 0.70f) {
-    color = (float4)(0.2f, 0.6f, 0.2f, 1.0f); // Fű / Erdő
-  } else if (val < 0.85f) {
-    color = (float4)(0.5f, 0.5f, 0.5f, 1.0f); // Szikla / Hegy
-  } else {
-    color = (float4)(0.9f, 0.9f, 0.9f, 1.0f); // Hó a hegycsúcson
-  }
-
-  write_imagef(output, (int2)(i, j), color);
+  // Normalizálás [0, 1] tartományba
+  output[j * width + i] = (total / max_value + 1.0f) * 0.5f;
 }
