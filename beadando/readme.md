@@ -1,6 +1,7 @@
 # Procedurális Terepgenerátor OpenCL és OpenGL Interoperabilitással
 
 Beadandó projekt a **Párhuzamos eszközök programozása** (GEMAK259-B) kurzushoz.
+
 Készítette: Tóth Zsombor Gábor, D0H157
 
 ## A projektről
